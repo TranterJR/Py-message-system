@@ -1,10 +1,18 @@
 from tkinter import *
-import sqlite3, hashlib, uuid, random, itertools, time
+import sqlite3, hashlib, uuid, itertools, datetime, random
 import tkinter.messagebox as tm
+import os
 
-def main_screen():
+from Crypto.Cipher import AES
+from Crypto.Hash import SHA256
+from Crypto import Random
+
+def setScreen():
     global screen
     screen = Tk()
+
+def main_screen():
+
     screen.geometry("300x300")
     clearScreen()
     screen.title("Login into Tool")
@@ -46,6 +54,7 @@ def login():
 
 def loginuser(u,p):
     global username_info
+    global USER_ID
     # Convert username and password into strings
     username_info = u.get()
     password_info = p.get()
@@ -53,21 +62,20 @@ def loginuser(u,p):
     # connect to database
     conn = sqlite3.connect("Database.db")
     c = conn.cursor()
-    c.execute("SELECT password FROM users WHERE username=?",(username_info,))
+    c.execute("SELECT password, ID FROM users WHERE username=?",(username_info,))
     # Verify login
     data = c.fetchall()
-    for x in data:
-        for i in x:
-            salt = i[-32:]
+    print(data)
+    USER_ID = data[0][1]
 
+    salt = data[0][0][-32:]
+    print(salt)
     password_info = hashlib.sha256(salt.encode() + password_info.encode()).hexdigest() + ';' + salt
     conn.commit()
-    print(data[0][0])
-    print(password_info)
     if password_info == data[0][0]:
         print("success")
 
-    navigation()
+        navigation()
 
 def register():
 
@@ -127,11 +135,13 @@ def registeruser(u,p):
         # Insert new user into database
         c.execute("INSERT INTO users(username, password) VALUES(?,?)",(username_info,password_info))
         conn.commit()
+        clearScreen()
+        main_screen()
 
 def navigation():
 
     clearScreen()
-    screen.title("Login")
+    screen.title("Navigation")
     screen.geometry("500x500")
     Label(screen, text="Navigation", bg="grey", width="300", height="2", font=("Calibri", 13)).pack()
     Label(text="").pack()
@@ -157,6 +167,7 @@ def compose():
 
     Target = StringVar()
     Message = StringVar()
+    password = StringVar()
 
     Label(screen, text="To:").pack()
     Entry(screen, textvariable=Target).pack()
@@ -169,43 +180,164 @@ def compose():
     e = Entry(screen, textvariable=Message, width=50)
     e.pack()
     Label(screen, text="").pack()
+    Label(screen, text="Set password:").pack()
+    Label(screen, text="").pack()
+    e = Entry(screen, textvariable=password, width=50)
+    e.pack()
     Label(screen, text="").pack()
     Label(screen, text="").pack()
-    Button(text="Send", height="2", width="30", command=lambda: send(e)).pack()
+    Label(screen, text="").pack()
+    Button(text="Send", height="2", width="30", command=lambda: begin(getKey(password), e, Target)).pack()
 
-def send(m):
-    clearScreen()
-    print(m.get())
+def getKey(p):
+    password = str(p.get())
+    hasher = SHA256.new(password.encode('utf-8'))
+    return hasher.digest()
+
+def begin(p,m,t):
+    write2File(m)
+    encrypt(p,"messages/temp.txt",t)
+
+def write2File(m):
+    m = m.get()
+    with open("messages/temp.txt", "w") as temp:
+        temp.write(m)
+
+def wipeTemp():
+    os.remove("messages/temp.txt")
+
+def encrypt(key, filename, T):
+    T = T.get()
+    chunksize = 64*1024                                                                     #how many chunks to read from file
+    outputFile = "messages/" + str(random.randint(0,10000)) + ".txt"                       #New fiilename
+    filesize = str(os.path.getsize(filename)).zfill(16)                                      #calculates filesize
+    IV = Random.new().read(16)                                                  #creates an initial vector for random ciphertext
+
+    encryptor = AES.new(key, AES.MODE_CBC, IV)                  #choses AES chain block cipher mode
+
+    with open(filename, 'rb') as infile:                        #opens file as binary
+        with open(outputFile, 'wb') as outfile:                 #creates the outputfile as write binary
+            outfile.write(filesize.encode('utf-8'))             #determines file size
+            outfile.write(IV)
+
+            while True:
+                chunk = infile.read(chunksize)                  #reads file chunk size
+
+                if len(chunk) == 0:
+                    break
+                elif len(chunk) % 16 != 0:
+                    chunk += b' ' * (16 - (len(chunk) % 16))    #if chunk is not equal to mod 16 pad the chunk to 16
+
+                outfile.write(encryptor.encrypt(chunk))         #writes encrypted file
+
+    wipeTemp()
+    uploadMessage(T,outputFile)
+
+def uploadMessage(reciever, file): #Pass in the reciever and the content for the message, the timestamp and sender is preset
+
+    date = str(datetime.datetime.utcnow())[0:19]
+    c.execute('''INSERT INTO messages(receiver, sender, fileName, timestamp)
+                   VALUES(:receiver,:sender, :fileName, :timestamp)''',
+                   {'receiver':reciever, 'sender':USER_ID, 'fileName':file, 'timestamp':date})
+    conn.commit()
+    return
 
 def viewMessages():
     clearScreen()
-    screen.title("Login")
+    screen.title("Messages")
     screen.geometry("500x500")
     Label(screen, text="Messages", bg="grey", width="300", height="2", font=("Calibri", 13)).pack()
     Label(text="").pack()
+    T1 = Text(screen, height=2, width=30)
+    T2 = Text(screen, height=2, width=30)
+    T3 = Text(screen, height=2, width=30)
+    T4 = Text(screen, height=2, width=30)
+    T5 = Text(screen, height=2, width=30)
 
-    """
-    grid system shwoing messages ?? 
-    text(screen, 
-    
-    fetch messages as List
+    # T.insert(END, "Just a text Widget\nin two lines\n")
+
+    messages = fetchAll()
+
+    a = [T1,T2,T3,T4,T5]
+    b = -1
     for message in messages:
-        T.insert(END, str(message) + "\n"")
-    
-    """
-    T = Text(screen, height=2, width=30)
-    T.pack()
-    T.insert(END, "Just a text Widget\nin two lines\n")
+       b += 1
+
+    b = [0,1,2,3]
+    zipd = zip(a,b)
+    if b != -1:
+        for a,b in zipd:
+            senderID = messages[b][2]
+            sender = getUsername(senderID)
+            a.insert(END, "Message from: " + str(sender) + "\n" + "Sent at: " + str(messages[b][4]))
+            Button(text="Decrypt", height="1", width="20", command=lambda: getPass(messages[b][3])).pack()
+            Label(text="").pack()
+            a.pack()
+    else:
+        Label(text="").pack()
+        Label(text="").pack()
+        Label(text="NO MESSAGES").pack()
+        Label(text="").pack()
+        Label(text="").pack()
+
+
     Label(text="").pack()
     Button(text="Exit", height="2", width="20", command=lambda: navigation()).pack()
     Label(text="").pack()
 
+def getPass(m):
+    clearScreen()
+    screen.title("Enter pass")
+    screen.geometry("500x500")
+    Label(screen, text="Password Entry", bg="grey", width="300", height="2", font=("Calibri", 13)).pack()
+    Label(text="").pack()
+    password = StringVar()
+    Entry(screen, textvariable=password, width=50)
+    Label(text="").pack()
+    Button(text="Submit", height="2", width="20", command=lambda: pass).pack()
+    Label(text="").pack()
+    Button(text="Cancel", height="2", width="20", command=lambda: viewMessages()).pack()
 
-def fetchMessages():
-    conn = sqlite3.connect("Database.db")
-    c = conn.cursor()
-    c.execute("SELECT * FROM messages WHERE username=?",(username_info,))
-    messages = c.fetchall()
+
+
+def getUsername(ID):
+    c.execute("SELECT username FROM users WHERE ID = '" + str(ID) + "'")
+    user = c.fetchall()
+
+    return user[0][0]
+
+def fetchAll(): #Returns all messages based on the userid in use
+
+    c.execute("SELECT * FROM messages WHERE receiver = '" + str(USER_ID) + "'")
+    received = c.fetchall()
+
+    return received
+
+def fetchFrom(sender): #fetches messages only from given sender
+    c.execute("SELECT * FROM messages WHERE receiver = '" + USER_ID + "' AND sender = '" + sender + "'")
+    received = c.fetchall()
+
+    return received
+
+def decrypt(key, filename):
+    chunksize = 64*1024
+    outputFile = filename[11:]
+
+    with open(filename, 'rb') as infile:
+        filesize = int(infile.read(16))
+        IV = infile.read(16)
+
+        decryptor = AES.new(key, AES.MODE_CBC, IV)
+
+        with open(outputFile, 'wb') as outfile:
+            while True:
+                chunk = infile.read(chunksize)
+
+                if len(chunk) == 0:
+                    break
+
+                outfile.write(decryptor.decrypt(chunk))
+            outfile.truncate(filesize)
 
 def logout():
     screen.destroy()
@@ -216,7 +348,7 @@ def clearScreen():
         child.destroy()
 
 def loadDB():
-
+    global c, conn
     conn = sqlite3.connect("Database.db")
     c = conn.cursor()
     try:
@@ -225,14 +357,32 @@ def loadDB():
         print(users,"\n")
     except:
 
-        c.execute('''CREATE TABLE users 
-                        (ID INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, password TEXT)
+        c.execute('''CREATE TABLE users (ID INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, password TEXT
+                            )
                          
                   ''')
+        c.execute('''CREATE TABLE messages (mess_id INTEGER PRIMARY KEY AUTOINCREMENT, receiver TEXT, sender TEXT, fileName TEXT, timestamp TEXT
+                            )
+                          ''')
         conn.commit()
 
 def main():
     loadDB()
+    setScreen()
     main_screen()
 
 main()
+
+
+def destroy(): # will delete all messages sent to the user
+    c.execute("DELETE  FROM messages WHERE mess_id > 0")
+    print("Messages Destroyed")
+    conn.commit()
+    return
+
+# print(fetchAll()) #Call fetchAll to retrieve all messages sent to the user
+# fetchFrom(x)# Call to show only messages received from user x
+# destroy() # Call destroy to delete all messages sent to the user
+# messageSend() # Call to send a message to another user, receiver must match the recipients username.
+
+""""""
